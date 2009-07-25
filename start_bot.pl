@@ -3,10 +3,11 @@
 use LajlBot;
 
 print "start\n";
-my $ize = LajlBot->new();
-$ize->connect();
+my $bot = LajlBot->new({config => '/home/ajnasz/.lajlbotconf.ini'});
+$bot->set('port', 6668);
+$bot->connect();
 print "connected\n";
-$ize->start();
+$bot->start();
 # print "started";
 # use Data::Dumper;
 # print Dumper $ize;
