@@ -17,11 +17,15 @@ sub new {
   };
   my $module;
   foreach my $file (@FILES) {
-      if($file =~ /.+\.pm$/) {
+      if($file =~ /^[^\.].+\.pm$/) {
         $file =~ s/\.pm$//;
         eval "use LajlBot::Modules::$file";
         $module = eval("LajlBot::Modules::$file->new()");
-        push(@{$self->{modules}}, $module);
+        if($module) {
+          push(@{$self->{modules}}, $module);
+        } else {
+          print "Failed to initialize module: $file\n";;;;
+        }
         # $file->new();
       }
   }
