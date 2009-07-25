@@ -7,6 +7,7 @@ use Net::IRC;
 use Data::Dumper;
 use LajlBot::Modules;
 use File::Basename;
+use Config::Simple;
 use strict;
 
 my $lajlbot_dir = dirname $0;
