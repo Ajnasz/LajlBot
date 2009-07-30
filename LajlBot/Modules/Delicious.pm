@@ -23,18 +23,17 @@ sub new {
 
 sub action {
   my $self = shift;
-  my ($command, $bot) = @_;
+  my ($command, $text, $event, $bot) = @_;
 
   my @output;
-  print 'create new delicious instance';
-  my $del = Net::Delicious->new($bot->{config});
-  print Dumper $del;
-  foreach my $p ($del->recent_posts()) {
+  warn 'delicious command: ', $command, "\ntext: $text\n";
+  my $delicious = Net::Delicious->new({user => $bot->{config}->{'delicious.user'}, pswd => $bot->{config}->{'delicious.pswd'}});
+  foreach my $post ($delicious->all_posts_for_tag({tag => $text})) {
     #print Dumper($p);
 
-    push(@output, encode('iso8859-2', $p->href() . ' -> ' .$p->description()));
+    push(@output, encode('iso8859-2', $post->href() . ' -> ' .$post->description()));
   }
-  return join("\n", @output);
+  return "found " . @output ." results\n" . join("\n", @output);
 }
 
 1;
