@@ -20,35 +20,21 @@ sub new {
   if ($args->{config}) {
     $conf = $args->{config} 
   }
-  my $lajl_conf = Config::Simple->new($conf);
+  my $config = {};
+  Config::Simple->import_from('lajlbot.ini', $config);
+  Config::Simple->import_from($conf, $config);
   my $self = {
-    botname => $botname,
-    server => 'localhost',
-    port => '6667',
-    nick => $botname,
-    ircname => $botname,
-    username => $botname,
-    channel => '#test',
+    botname => $config->{'lajlbot.name'} || $botname,
+    server => $config->{'lajlbot.server'} || 'localhost',
+    port => $config->{'lajlbot.port'} || '6667',
+    nick => $config->{'lajlbot.nick'} || $botname,
+    ircname => $config->{'lajlbot.ircname'} || $botname,
+    username => $config->{'lajlbot.username'} || $botname,
+    channel => $config->{'lajlbot.channel'} || '#test',
     modules => LajlBot::Modules->new(),
-    config => $lajl_conf,
+    config => $config,
   };
 
-
-  # if ($args->{config}) {
-  #   $conf = $args->{config} 
-  # }
-  # my $config = Config::Simple->new($conf),
-  # my $self = {
-  #   botname => $config->{lajlbot}->{botname},
-  #   server => $config->{lajlbot}->{server},
-  #   port => $config->{lajlbot}->{port},
-  #   nick => $config->{lajlbot}->{botname},
-  #   ircname => $config->{lajlbot}->{botname},
-  #   username => $config->{lajlbot}->{botname},
-  #   channel => $config->{lajlbot}->{channel},
-  #   modules => LajlBot::Modules->new(),
-  #   config => $config,
-  # };
 
   
   bless($self, $class);
@@ -89,13 +75,19 @@ sub set {
     }
   }
 }
-sub getcommand {
-  my ($self, $text) = @_;
-  my $botname = $self->{botname};
-	if ($text =~ /^(?:[`,!]|$botname:? ?)([^ ]+)/) {
-    return $1;
+sub get_command {
+  my ($self, $text, $msg) = @_;
+  my $botname = $self->{nick};
+  if($msg) {
+    if($text =~ /^(?:[`,!]|$botname:? ?)?([^ ]+)(?: (.*))?/) {
+      return [$1, $2];
+    }
   } else {
-    return 0;
+    if ($text =~ /^(?:[`,!]|$botname:? ?)([^ ]+)(?: (.*))?/) {
+      return [$1, $2];
+    } else {
+      return 0;
+    }
   }
 }
 sub connect {
@@ -133,45 +125,64 @@ sub on_part {
   return 1;
 }
 
-sub on_private {
-  my ($self, $conn, $event) = @_;
-	my $text = $event->{args}[0];
-  print $text;
-}
-sub on_public {
-  my ($self, $conn, $event) = @_;
-	my $text = $event->{args}[0];
-  my $command = $self->getcommand($text);
-  print "\ncommand $command\n";
-	if ($command) {
+sub run_command {
+  my $self = shift;
+  my ($conn, $event, $command) = @_;
+  if(!$command) {return 0;}
+  my ($com, $arg) = @$command;
+ 	if ($com) {
     my $out = '';
     for my $module (@{$self->{modules}->{modules}}) {
-      # print 'commands: ', Dumper($module);
-      if(grep(/^$command$/, @{$module->{commands}})) {
-        $out = $module->action($text, $self);
+      print 'in for: ', $module;
+      if(grep(/^$com$/, @{$module->{commands}})) {
+        if($module->{privacy} && $module->{privacy} eq 'msg' && $event->{format} ne 'msg') {
+          $out = "You can not use this command on public channel!";
+        } else {
+          if($arg) {$arg =~ s/^([`,!]|$self->{nick})?$com\s+//;}
+          $out = $module->action($com, $arg, $event, $self);
+        }
         last;
       }
     }
     if($out) {
       # wrap text at 400 chars (about as much as you should put
       # into a single IRC message
-      # my @texts = split("\n", $out);
-      # my $str = '';
-      $out = substr($out, 400);
-      $conn->privmsg($event->{to}[0], $out);
+      my @texts = split("\n", $out);
+      if(length($out) > 300) {
+        $out = substr($out, 300);
+      }
       # $event->{to}[0] is the channel where this was said
-      # foreach (@texts) {substr($_, 300);
-      #   $conn->privmsg($event->{to}[0], $_);
-      # }
+      my $str;
+      foreach (@texts) {
+        $str = $_;
+        if(length($_) > 300) {
+          $str = substr($_, 300);
+        }
+        my $dst = $event->{format} eq 'msg' ? $event->{nick} : $event->{to}[0];
+        $self->{config}->{'lajlbot.sendnotice'} ? $conn->notice($dst, $_) : $conn->privmsg($dst, $_);
+      }
     }
 	}
+}
+
+sub on_msg {
+  my $self = shift;
+  my ($conn, $event) = @_;
+	my $text = $event->{args}[0];
+  my @command = $self->get_command($text, 1);
+  $self->run_command($conn, $event, @command);
+}
+sub on_public {
+  my ($self, $conn, $event) = @_;
+	my $text = $event->{args}[0];
+  my @command = $self->get_command($text);
+  $self->run_command($conn, $event, @command);
 }
 
 sub start {
 
   my $self = shift;
-  #print Dumper $self;
-# add event handlers for join and part events
+  # add event handlers for join and part events
   $self->{connection}->add_handler('join', sub {
       my ($conn, $event) = @_;
       $self->on_join($conn, $event);
@@ -194,9 +205,10 @@ sub start {
       $self->on_public($conn, $event);
     }
   );
-  $self->{connection}->add_handler('private', sub {
+  $self->{connection}->add_handler('msg', sub {
       my ($conn, $event) = @_;
-      $self->on_private($conn, $event);
+      print "PRIVMSG";
+      $self->on_msg($conn, $event);
     }
   );
 
