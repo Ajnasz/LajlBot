@@ -18,8 +18,9 @@ sub new {
 }
 
 sub action {
-  my ($self, $command, $bot) = @_;
-  my $output = '';
+  my $self = shift;
+  my ($command, $text, $event, $msg) = @_;
+
   for my $module (@{$bot->{modules}->{modules}}) {
     $output .= "\n" . $module->{module_name};
     $output .= "\n    " . join(', ', @{$module->{commands}});
